@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Focus & clipboard event tester</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>
+:root{--bg:#f6f7f9;--fg:#15181d;--mut:#5b6472;--card:#fff;--line:#d5dae1;--ok:#13795b;--bad:#b42318;--acc:#2455d6;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#101319;--fg:#e8ebf0;--mut:#9aa4b2;--card:#171b23;--line:#2a313c;--ok:#4cc9a0;--bad:#ff8a80;--acc:#7ea2ff}}
+:root[data-theme="dark"]{--bg:#101319;--fg:#e8ebf0;--mut:#9aa4b2;--card:#171b23;--line:#2a313c;--ok:#4cc9a0;--bad:#ff8a80;--acc:#7ea2ff}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:860px;margin:0 auto;padding:20px 16px 48px}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:0 0 8px}
+p.s{color:var(--mut);margin:0 0 16px}
+section{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin-bottom:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+.k{border:1px solid var(--line);border-radius:6px;padding:8px 10px}
+.k b{display:block;font-size:20px}.k span{color:var(--mut);font-size:12px}
+.row{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line);padding:5px 0}
+.row:last-child{border:0}.ok{color:var(--ok)}.bad{color:var(--bad)}
+#prot{user-select:none;-webkit-user-select:none;border:1px dashed var(--line);border-radius:6px;padding:12px;margin:8px 0}
+#log{height:260px;overflow:auto;border:1px solid var(--line);border-radius:6px;padding:8px;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;overflow-x:auto;white-space:pre}
+button{font:inherit;background:var(--acc);color:#fff;border:0;border-radius:6px;padding:6px 12px;cursor:pointer}
+textarea{width:100%;box-sizing:border-box;min-height:60px;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:8px;font:inherit}
+</style>
+</head>
+<body>
+<main>
+<h1>Focus & clipboard event tester</h1>
+<p class="s">Open in a normal tab. Switch tabs, Alt-Tab, minimize, right-click and copy the protected text. Compare a clean browser with one that has extensions enabled (reload after toggling).</p>
+
+<section>
+<h2>Counters</h2>
+<div class="grid" id="counters"></div>
+</section>
+
+<section>
+<h2>Live state</h2>
+<div id="state"></div>
+</section>
+
+<section>
+<h2>Tamper checks</h2>
+<div id="tamper"></div>
+</section>
+
+<section>
+<h2>Protected text (page blocks copy and right-click)</h2>
+<div id="prot" oncontextmenu="return false">Try to select, copy or right-click this sentence. The page sets user-select: none, blocks the context menu, and cancels copy events.</div>
+<div class="row"><span>Canary: user-select is none</span><span id="c-us"></span></div>
+<div class="row"><span>Canary: contextmenu blocker still set</span><span id="c-cm"></span></div>
+<p class="s" style="margin-top:10px">Paste test area</p>
+<textarea id="ta" placeholder="Paste here to log a paste event"></textarea>
+</section>
+
+<section>
+<h2>Event log</h2>
+<div id="log" aria-live="off"></div>
+<p><button id="clear">Clear log</button> <button id="dl">Copy log as JSON</button></p>
+</section>
+</main>
+
+<script>
+(function(){
+var t0=performance.now(), logEl=document.getElementById('log'), events=[];
+var C={blur:0,focus:0,visibilitychange:0,pagehide:0,mouseleave:0,copy:0,paste:0,contextmenu:0,selection:0,hbLate:0};
+function now(){return ((performance.now()-t0)/1000).toFixed(2)}
+function log(type,data){
+  var e={t:+now(),type:type,vis:document.visibilityState,hidden:document.hidden,hasFocus:document.hasFocus()};
+  if(data)e.data=data; events.push(e);
+  logEl.textContent+=e.t.toFixed(2).padStart(7)+'s  '+type.padEnd(16)+' vis='+e.vis+' focus='+e.hasFocus+(data?'  '+JSON.stringify(data):'')+'\n';
+  logEl.scrollTop=logEl.scrollHeight; render();
+}
+function bump(k){C[k]++}
+window.addEventListener('blur',function(){bump('blur');log('window.blur')},true);
+window.addEventListener('focus',function(){bump('focus');log('window.focus')},true);
+document.addEventListener('visibilitychange',function(){bump('visibilitychange');log('visibilitychange')},true);
+window.addEventListener('pagehide',function(){bump('pagehide');log('pagehide')});
+document.addEventListener('mouseleave',function(){bump('mouseleave');log('doc.mouseleave')});
+document.addEventListener('copy',function(e){bump('copy');log('copy',{defaultPrevented:e.defaultPrevented,trusted:e.isTrusted});e.preventDefault()},true);
+document.addEventListener('paste',function(e){bump('paste');var t=(e.clipboardData&&e.clipboardData.getData('text'))||'';log('paste',{len:t.length,trusted:e.isTrusted})},true);
+document.addEventListener('contextmenu',function(e){bump('contextmenu');log('contextmenu',{defaultPrevented:e.defaultPrevented})},true);
+document.addEventListener('selectionchange',function(){
+  var s=getSelection(); if(s&&!s.isCollapsed&&s.anchorNode&&document.getElementById('prot').contains(s.anchorNode)){bump('selection');log('selection.protected',{len:s.toString().length})}
+});
+// heartbeat drift (timer throttling shows as late ticks)
+var last=performance.now();
+setInterval(function(){var n=performance.now(),d=n-last;last=n;if(d>1500){bump('hbLate');log('heartbeat.late',{gap_ms:Math.round(d)})}},250);
+// canary + tamper checks
+function row(l,v,good){return '<div class="row"><span>'+l+'</span><span class="'+(good?'ok':'bad')+'">'+v+'</span></div>'}
+function check(){
+  var us=getComputedStyle(document.getElementById('prot')).userSelect;
+  var usOk=us==='none', cmOk=typeof document.getElementById('prot').oncontextmenu==='function';
+  var a=document.getElementById('c-us'),b=document.getElementById('c-cm');
+  a.textContent=usOk?'intact ('+us+')':'CHANGED ('+us+')';a.className=usOk?'ok':'bad';
+  b.textContent=cmOk?'intact':'REMOVED';b.className=cmOk?'ok':'bad';
+  var d=Object.getOwnPropertyDescriptor(Document.prototype,'visibilityState');
+  var nat=d&&d.get&&/\[native code\]/.test(Function.prototype.toString.call(d.get));
+  var own=Object.prototype.hasOwnProperty.call(document,'visibilityState')||Object.prototype.hasOwnProperty.call(document,'hidden');
+  var hd=Object.getOwnPropertyDescriptor(Document.prototype,'hidden');
+  var nat2=hd&&hd.get&&/\[native code\]/.test(Function.prototype.toString.call(hd.get));
+  var fr=document.createElement('iframe');fr.style.display='none';fr.srcdoc='<!doctype html>';document.body.appendChild(fr);
+  var realm='n/a';try{var cd=fr.contentDocument;if(cd&&cd.readyState){realm=cd.visibilityState;}}catch(e){}
+  document.body.removeChild(fr);
+  var mismatch=realm!=='n/a'&&realm!==document.visibilityState;
+  document.getElementById('tamper').innerHTML=
+    row('visibilityState getter is native',nat?'yes':'no',nat)+
+    row('hidden getter is native',nat2?'yes':'no',nat2)+
+    row('Own property shadows prototype on document',own?'yes (suspicious)':'no',!own)+
+    row('Fresh-iframe realm agrees with top document',mismatch?'MISMATCH ('+realm+' vs '+document.visibilityState+')':'agrees ('+realm+')',!mismatch);
+}
+function render(){
+  var c=document.getElementById('counters');
+  c.innerHTML=Object.keys(C).map(function(k){return '<div class="k"><b>'+C[k]+'</b><span>'+k+'</span></div>'}).join('');
+  document.getElementById('state').innerHTML=
+    row('document.visibilityState',document.visibilityState,true)+
+    row('document.hidden',String(document.hidden),true)+
+    row('document.hasFocus()',String(document.hasFocus()),true);
+}
+setInterval(function(){render();check()},1000);
+render();check();log('page.loaded');
+document.getElementById('clear').onclick=function(){logEl.textContent='';events=[]};
+document.getElementById('dl').onclick=function(){
+  var s=JSON.stringify({counters:C,events:events},null,1);
+  if(navigator.clipboard)navigator.clipboard.writeText(s).catch(function(){});
+};
+})();
+</script>
+</body>
+</html>
